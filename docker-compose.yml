@@ -13,3 +13,20 @@ services:
     volumes:
       - ./config.example.json:/app/config/config.json:ro
       - ./data:/app/data
+
+  folo-telegram-poll:
+    build: .
+    profiles:
+      - poll
+    restart: unless-stopped
+    command: ["python", "app.py", "poll"]
+    environment:
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}"
+      WEBHOOK_SECRET: "${WEBHOOK_SECRET:-change-this-secret}"
+      RADAR_CONFIG: "/app/config/config.json"
+      RADAR_DB: "/app/data/radar.sqlite"
+      POLL_INTERVAL_SECONDS: "${POLL_INTERVAL_SECONDS:-300}"
+    volumes:
+      - ./config.example.json:/app/config/config.json:ro
+      - ./data:/app/data

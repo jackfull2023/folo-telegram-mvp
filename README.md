@@ -20,6 +20,18 @@ Folo 订阅 RSSHub/X 源
 
 这样你不需要自己轮询 RSS，也不需要付费使用 X API。
 
+如果 Folo Action/Webhook 不稳定，也可以绕开 Folo 自动化，直接使用内置 Poll 模式作为备用：
+
+```text
+RSS/RSSHub 源
+  -> 本服务定时轮询
+  -> SQLite 去重
+  -> 账号权重 + 关键词打分
+  -> Telegram Bot 推送频道
+```
+
+Folo 仍然可以作为阅读器使用，但 Telegram 推送不再依赖 Folo 的自动化规则。
+
 ## 1. 准备 Telegram
 
 1. 在 Telegram 找 `@BotFather` 创建 bot，拿到 bot token。
@@ -50,6 +62,8 @@ WEBHOOK_SECRET=换成一个长一点的随机字符串
 - `negative_keywords`：垃圾词扣分。
 - `filter.min_score`：最低推送分数。
 - `limits.max_pushes_per_hour`：每小时最多推送数。
+- `poll`：RSS 轮询配置。
+- `feeds`：显式配置的 RSS/Atom 源。
 
 评分模型：
 
@@ -87,6 +101,24 @@ $env:TELEGRAM_CHAT_ID="@your_channel_name"
 python app.py test
 ```
 
+单次轮询 RSS/RSSHub，不发送 Telegram，只打印解析和评分：
+
+```powershell
+python app.py poll-once --dry-run
+```
+
+单次真实轮询，会走 SQLite 去重、打分和 Telegram 推送：
+
+```powershell
+python app.py poll-once
+```
+
+长期轮询：
+
+```powershell
+python app.py poll
+```
+
 ## 4. Docker 运行
 
 ```powershell
@@ -99,6 +131,78 @@ docker compose up -d --build
 
 ```text
 http://localhost:8080
+```
+
+如果你想在 Docker 里运行轮询模式，可以先单次试跑：
+
+```bash
+docker compose run --rm folo-telegram-mvp python app.py poll-once --dry-run
+```
+
+长期生产环境可以启用内置的 `poll` profile。它会启动一个单独的轮询容器，和 webhook 服务共用同一个 `data/radar.sqlite`：
+
+```bash
+docker compose --profile poll up -d --build
+```
+
+如果你不再需要 Folo Webhook，只想跑轮询，也可以只启动轮询服务：
+
+```bash
+docker compose --profile poll up -d --build folo-telegram-poll
+```
+
+## 4.1 Poll 模式配置
+
+默认配置不会启用任何轮询源，避免误推无关内容。需要使用 Poll 模式时，先在 `feeds` 里配置确认可访问的 RSS/Atom 源。公共 `rsshub.app` 的 X/Twitter 路由可能因为上游登录配置不可用而返回 404；如果你有自己的 RSSHub 实例，并且 X route 已配置好，可以把 `poll.auto_from_accounts` 改成 `true`，服务会自动根据 `accounts` 生成 RSSHub Twitter 源：
+
+```text
+https://rsshub.app/twitter/user/karpathy
+https://rsshub.app/twitter/user/sama
+```
+
+如果你有自己的 RSSHub 实例，把 `poll.rsshub_base` 改成你的域名：
+
+```json
+{
+  "poll": {
+    "rsshub_base": "https://rsshub.your-domain.com"
+  }
+}
+```
+
+也可以在 `feeds` 里手动添加任意 RSS/Atom 源：
+
+```json
+{
+  "feeds": [
+    {
+      "title": "OpenAI Python Releases",
+      "url": "https://github.com/openai/openai-python/releases.atom",
+      "siteUrl": "https://github.com/openai/openai-python"
+    }
+  ]
+}
+```
+
+轮询频率和每个源最多处理的新条目数：
+
+```json
+{
+  "poll": {
+    "interval_seconds": 300,
+    "max_items_per_feed": 20,
+    "skip_existing_on_first_run": true,
+    "fetch_timeout_seconds": 20
+  }
+}
+```
+
+`skip_existing_on_first_run` 为 `true` 时，某个 feed 第一次被轮询时只会把当前已有条目写入基线，不会把历史内容全部推送到 Telegram；从下一轮开始才推送新条目。
+
+也可以用环境变量覆盖轮询间隔：
+
+```bash
+POLL_INTERVAL_SECONDS=180 python app.py poll
 ```
 
 ## 5. 暴露公网 Webhook
@@ -137,11 +241,13 @@ http://localhost:8080
 
 2. 创建一个 Action。
 
-3. Action 条件建议先设置为：
+3. Action 条件选择“指定条件”，不要使用“全部”。推荐先按订阅源分类过滤，例如：
 
    ```text
-   When new entry is created
+   订阅源分类 等于 AI
    ```
+
+   这样 Folo 会把这条规则稳定保存下来，并且只把目标分类的新条目推到 Webhook。
 
 4. Action 动作选择 Webhook。
 

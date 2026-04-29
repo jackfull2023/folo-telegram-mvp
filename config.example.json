@@ -16,6 +16,16 @@
   "limits": {
     "max_pushes_per_hour": 20
   },
+  "poll": {
+    "interval_seconds": 300,
+    "max_items_per_feed": 20,
+    "fetch_timeout_seconds": 20,
+    "skip_existing_on_first_run": true,
+    "auto_from_accounts": false,
+    "rsshub_base": "https://rsshub.app",
+    "rsshub_route_template": "/twitter/user/{account}"
+  },
+  "feeds": [],
   "accounts": {
     "karpathy": 10,
     "sama": 8,
