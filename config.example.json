@@ -1,0 +1,59 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080,
+    "webhook_path": "/webhook",
+    "webhook_secret": "change-this-secret"
+  },
+  "telegram": {
+    "bot_token": "",
+    "chat_id": "",
+    "include_debug": true
+  },
+  "filter": {
+    "min_score": 8
+  },
+  "limits": {
+    "max_pushes_per_hour": 20
+  },
+  "accounts": {
+    "karpathy": 10,
+    "sama": 8,
+    "ylecun": 7,
+    "demishassabis": 7,
+    "AndrewYNg": 7,
+    "hardmaru": 6,
+    "emollick": 6,
+    "nearcyan": 6,
+    "AnthropicAI": 6,
+    "OpenAI": 6,
+    "GoogleDeepMind": 6,
+    "lmsysorg": 5,
+    "huggingface": 5,
+    "a16z": 4,
+    "vitalikbuterin": 4
+  },
+  "keywords": {
+    "ai": 2,
+    "agent": 4,
+    "agents": 4,
+    "openai": 4,
+    "claude": 4,
+    "gemini": 3,
+    "deepseek": 3,
+    "benchmark": 3,
+    "eval": 3,
+    "open source": 3,
+    "github": 2,
+    "polymarket": 5,
+    "prediction market": 5,
+    "rss": 2,
+    "telegram": 2
+  },
+  "negative_keywords": {
+    "giveaway": -6,
+    "airdrop": -5,
+    "sponsored": -4,
+    "promo code": -4
+  }
+}

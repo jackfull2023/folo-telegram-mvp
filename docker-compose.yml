@@ -1,0 +1,15 @@
+services:
+  folo-telegram-mvp:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}"
+      WEBHOOK_SECRET: "${WEBHOOK_SECRET:-change-this-secret}"
+      RADAR_CONFIG: "/app/config/config.json"
+      RADAR_DB: "/app/data/radar.sqlite"
+    volumes:
+      - ./config.example.json:/app/config/config.json:ro
+      - ./data:/app/data
