@@ -51,6 +51,7 @@ def load_config() -> dict[str, Any]:
     config.setdefault("limits", {})
     config.setdefault("poll", {})
     config.setdefault("feeds", [])
+    config.setdefault("scoring", {})
 
     return config
 
@@ -229,6 +230,99 @@ def text_blob(payload: dict[str, Any]) -> str:
     return "\n".join(str(p) for p in parts if p).lower()
 
 
+def entry_text(payload: dict[str, Any], field: str) -> str:
+    entry = payload.get("entry") or {}
+    return strip_html(entry.get(field))
+
+
+def feed_text(payload: dict[str, Any], field: str) -> str:
+    feed = payload.get("feed") or {}
+    return strip_html(feed.get(field))
+
+
+def entry_url(payload: dict[str, Any]) -> str:
+    return str((payload.get("entry") or {}).get("url") or "")
+
+
+def field_blob(payload: dict[str, Any], fields: list[str]) -> str:
+    entry = payload.get("entry") or {}
+    feed = payload.get("feed") or {}
+    values: list[str] = []
+    for field in fields:
+        source, _, name = field.partition(".")
+        if source == "entry":
+            values.append(strip_html(entry.get(name)))
+        elif source == "feed":
+            values.append(strip_html(feed.get(name)))
+        elif field == "url":
+            values.append(str(entry.get("url") or ""))
+        elif field == "author":
+            values.append(str(entry.get("author") or ""))
+        elif field == "title":
+            values.append(strip_html(entry.get("title")))
+        elif field == "description":
+            values.append(strip_html(entry.get("description")))
+        elif field == "content":
+            values.append(strip_html(entry.get("content")))
+        elif field == "feed_title":
+            values.append(strip_html(feed.get("title")))
+        elif field == "feed_url":
+            values.append(str(feed.get("url") or ""))
+        elif field == "site_url":
+            values.append(str(feed.get("siteUrl") or ""))
+    return "\n".join(value for value in values if value).lower()
+
+
+def match_weighted_terms(text: str, terms: dict[str, Any], reason_prefix: str) -> tuple[int, list[str]]:
+    score = 0
+    reasons: list[str] = []
+    text = text.lower()
+    for term, raw_weight in terms.items():
+        keyword = str(term).lower()
+        if not keyword:
+            continue
+        if keyword in text:
+            weight = int(raw_weight)
+            score += weight
+            reasons.append(f"{reason_prefix}:{term}{weight:+d}")
+    return score, reasons
+
+
+def match_weighted_patterns(text: str, patterns: dict[str, Any], reason_prefix: str) -> tuple[int, list[str]]:
+    score = 0
+    reasons: list[str] = []
+    for pattern, raw_weight in patterns.items():
+        try:
+            matched = re.search(str(pattern), text, re.IGNORECASE) is not None
+        except re.error:
+            matched = str(pattern).lower() in text.lower()
+        if matched:
+            weight = int(raw_weight)
+            score += weight
+            reasons.append(f"{reason_prefix}:{pattern}{weight:+d}")
+    return score, reasons
+
+
+def add_score(current: int, reasons: list[str], delta: int, delta_reasons: list[str]) -> int:
+    if delta:
+        current += delta
+        reasons.extend(delta_reasons)
+    return current
+
+
+def published_age_hours(payload: dict[str, Any]) -> float | None:
+    published = (payload.get("entry") or {}).get("publishedAt")
+    if not published:
+        return None
+    try:
+        published_dt = dt.datetime.fromisoformat(str(published).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if published_dt.tzinfo is None:
+        published_dt = published_dt.replace(tzinfo=dt.timezone.utc)
+    return (dt.datetime.now(dt.timezone.utc) - published_dt).total_seconds() / 3600
+
+
 def account_key(payload: dict[str, Any]) -> str:
     entry = payload.get("entry") or {}
     feed = payload.get("feed") or {}
@@ -250,34 +344,92 @@ def account_key(payload: dict[str, Any]) -> str:
 def score_payload(payload: dict[str, Any]) -> tuple[int, list[str]]:
     score = 0
     reasons: list[str] = []
+    scoring = CONFIG.get("scoring") or {}
+    has_scoring_config = bool(scoring)
+    use_legacy_accounts = bool(scoring.get("use_legacy_accounts", True))
+    use_legacy_keywords = bool(scoring.get("use_legacy_keywords", not has_scoring_config))
+    use_legacy_negative_keywords = bool(scoring.get("use_legacy_negative_keywords", not has_scoring_config))
     blob = text_blob(payload)
 
     account = account_key(payload)
-    if account:
+    if account and use_legacy_accounts:
         weight = int(CONFIG["accounts"].get(account, 0))
         score += weight
-        reasons.append(f"account:{account}+{weight}")
+        reasons.append(f"account:{account}{weight:+d}")
 
-    for keyword, weight in CONFIG["keywords"].items():
-        if keyword.lower() in blob:
-            score += int(weight)
-            reasons.append(f"keyword:{keyword}+{weight}")
+    feed_title = feed_text(payload, "title")
+    feed_url = feed_text(payload, "url")
+    site_url = feed_text(payload, "siteUrl")
+    title = entry_text(payload, "title")
+    description = entry_text(payload, "description")
+    content = entry_text(payload, "content")
+    url = entry_url(payload)
 
-    for keyword, weight in CONFIG["negative_keywords"].items():
-        if keyword.lower() in blob:
-            score += int(weight)
-            reasons.append(f"negative:{keyword}{weight}")
+    if use_legacy_keywords:
+        for keyword, weight in CONFIG["keywords"].items():
+            if keyword.lower() in blob:
+                value = int(weight)
+                score += value
+                reasons.append(f"keyword:{keyword}{value:+d}")
 
-    published = (payload.get("entry") or {}).get("publishedAt")
-    if published:
-        try:
-            published_dt = dt.datetime.fromisoformat(str(published).replace("Z", "+00:00"))
-            hours_old = (dt.datetime.now(dt.timezone.utc) - published_dt).total_seconds() / 3600
-            if hours_old <= 3:
-                score += 2
-                reasons.append("fresh+2")
-        except ValueError:
-            pass
+    if use_legacy_negative_keywords:
+        for keyword, weight in CONFIG["negative_keywords"].items():
+            if keyword.lower() in blob:
+                value = int(weight)
+                score += value
+                reasons.append(f"negative:{keyword}{value:+d}")
+
+    delta, delta_reasons = match_weighted_terms(feed_title, scoring.get("feed_title_weights", {}), "feed")
+    score = add_score(score, reasons, delta, delta_reasons)
+
+    delta, delta_reasons = match_weighted_terms(feed_url, scoring.get("feed_url_weights", {}), "feed_url")
+    score = add_score(score, reasons, delta, delta_reasons)
+
+    delta, delta_reasons = match_weighted_terms(site_url, scoring.get("site_url_weights", {}), "site_url")
+    score = add_score(score, reasons, delta, delta_reasons)
+
+    delta, delta_reasons = match_weighted_terms(title, scoring.get("title_keywords", {}), "title")
+    score = add_score(score, reasons, delta, delta_reasons)
+
+    delta, delta_reasons = match_weighted_terms(
+        "\n".join(part for part in [description, content] if part),
+        scoring.get("body_keywords", {}),
+        "body",
+    )
+    score = add_score(score, reasons, delta, delta_reasons)
+
+    delta, delta_reasons = match_weighted_terms(url, scoring.get("url_keywords", {}), "url")
+    score = add_score(score, reasons, delta, delta_reasons)
+
+    delta, delta_reasons = match_weighted_patterns(blob, scoring.get("regex", {}), "regex")
+    score = add_score(score, reasons, delta, delta_reasons)
+
+    for rule in scoring.get("field_rules", []):
+        if not isinstance(rule, dict):
+            continue
+        fields = [str(field) for field in rule.get("fields", [])]
+        terms = rule.get("terms", {})
+        if not fields or not isinstance(terms, dict):
+            continue
+        name = str(rule.get("name") or "field")
+        delta, delta_reasons = match_weighted_terms(field_blob(payload, fields), terms, name)
+        score = add_score(score, reasons, delta, delta_reasons)
+
+    age_hours = published_age_hours(payload)
+    freshness_rules = scoring.get("freshness")
+    if isinstance(freshness_rules, list) and age_hours is not None:
+        for rule in freshness_rules:
+            if not isinstance(rule, dict):
+                continue
+            max_hours = float(rule.get("max_hours", 0))
+            if max_hours > 0 and age_hours <= max_hours:
+                weight = int(rule.get("score", 0))
+                score += weight
+                reasons.append(f"fresh<={max_hours:g}h{weight:+d}")
+                break
+    elif age_hours is not None and age_hours <= 3:
+        score += 2
+        reasons.append("fresh<=3h+2")
 
     return score, reasons
 

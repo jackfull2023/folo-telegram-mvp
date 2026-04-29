@@ -62,23 +62,122 @@ WEBHOOK_SECRET=换成一个长一点的随机字符串
 - `negative_keywords`：垃圾词扣分。
 - `filter.min_score`：最低推送分数。
 - `limits.max_pushes_per_hour`：每小时最多推送数。
+- `scoring`：更细的评分规则，例如标题关键词、正文关键词、URL 域名、新鲜度阶梯、低质词扣分。
 - `poll`：RSS 轮询配置。
 - `feeds`：显式配置的 RSS/Atom 源。
 
 评分模型：
 
 ```text
-score = account_weight + keyword_score + freshness_bonus
+score = legacy_account_score + legacy_keyword_score + scoring_rules
 ```
 
 示例：
 
 ```text
-karpathy 权重 10
-标题包含 agent +4
+karpathy 权重 +10
+标题包含 agent +5
+URL 是 github.com +3
 发布时间在 3 小时内 +2
-总分 16，超过 min_score=8，则推送
+总分 20，超过 min_score=8，则推送
 ```
+
+`accounts`、`keywords`、`negative_keywords` 是旧版通用评分。没有配置 `scoring` 时，它们会保持原行为；配置了 `scoring` 后，可以用下面三个开关控制是否继续叠加旧规则：
+
+```json
+{
+  "scoring": {
+    "use_legacy_accounts": true,
+    "use_legacy_keywords": false,
+    "use_legacy_negative_keywords": false
+  }
+}
+```
+
+调参时建议保留 `telegram.include_debug = true`，观察 Telegram 消息底部的 reason，例如：
+
+```text
+score=17 account:OpenAI+6; title:agent+5; url:github.com+3; fresh<=3h+2
+```
+
+### 2.1 细分评分规则
+
+新鲜度阶梯：
+
+```json
+{
+  "scoring": {
+    "freshness": [
+      { "max_hours": 1, "score": 4 },
+      { "max_hours": 3, "score": 2 },
+      { "max_hours": 12, "score": 1 }
+    ]
+  }
+}
+```
+
+标题命中通常比正文命中更重要：
+
+```json
+{
+  "scoring": {
+    "title_keywords": {
+      "agent": 5,
+      "benchmark": 4,
+      "开源": 3
+    },
+    "body_keywords": {
+      "agent": 2,
+      "benchmark": 2,
+      "开源": 2
+    }
+  }
+}
+```
+
+URL 和站点权重适合给高价值来源加分：
+
+```json
+{
+  "scoring": {
+    "url_keywords": {
+      "github.com": 3,
+      "arxiv.org": 4
+    },
+    "site_url_weights": {
+      "openai.com": 3,
+      "anthropic.com": 3
+    }
+  }
+}
+```
+
+Feed 权重和低质词扣分适合压制热榜、营销、健康谣言类内容：
+
+```json
+{
+  "scoring": {
+    "feed_title_weights": {
+      "微信 · 24h热文榜": -8,
+      "OpenAI News": 4
+    },
+    "field_rules": [
+      {
+        "name": "low_quality_cn",
+        "fields": ["entry.title", "entry.description", "feed.title"],
+        "terms": {
+          "震惊": -4,
+          "医生": -3,
+          "糖尿病": -4,
+          "热文榜": -6
+        }
+      }
+    ]
+  }
+}
+```
+
+每次调权重后，可以先用 `poll-once --dry-run` 或手动 POST 测试 payload 看分数，不要直接上生产推送。
 
 ## 3. 本地运行
 

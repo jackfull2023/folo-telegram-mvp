@@ -26,6 +26,94 @@
     "rsshub_route_template": "/twitter/user/{account}"
   },
   "feeds": [],
+  "scoring": {
+    "use_legacy_accounts": true,
+    "use_legacy_keywords": false,
+    "use_legacy_negative_keywords": false,
+    "freshness": [
+      {
+        "max_hours": 1,
+        "score": 4
+      },
+      {
+        "max_hours": 3,
+        "score": 2
+      },
+      {
+        "max_hours": 12,
+        "score": 1
+      }
+    ],
+    "feed_title_weights": {
+      "微信 · 24h热文榜": -8,
+      "24h热文榜": -6,
+      "Trending repositories": 2,
+      "OpenAI News": 4,
+      "Anthropic": 4
+    },
+    "feed_url_weights": {},
+    "site_url_weights": {
+      "openai.com": 3,
+      "anthropic.com": 3,
+      "deepmind.google": 3
+    },
+    "title_keywords": {
+      "agent": 5,
+      "agents": 5,
+      "benchmark": 4,
+      "eval": 4,
+      "open source": 3,
+      "github": 3,
+      "arxiv": 4,
+      "paper": 3,
+      "模型": 4,
+      "智能体": 5,
+      "开源": 3,
+      "论文": 3
+    },
+    "body_keywords": {
+      "agent": 2,
+      "agents": 2,
+      "benchmark": 2,
+      "eval": 2,
+      "open source": 2,
+      "github": 1,
+      "arxiv": 2,
+      "模型": 2,
+      "智能体": 2,
+      "开源": 2
+    },
+    "url_keywords": {
+      "github.com": 3,
+      "arxiv.org": 4,
+      "openai.com": 3,
+      "anthropic.com": 3,
+      "deepmind.google": 3
+    },
+    "regex": {
+      "gpt[- ]?\\d": 3,
+      "claude\\s?\\d": 3
+    },
+    "field_rules": [
+      {
+        "name": "low_quality_cn",
+        "fields": [
+          "entry.title",
+          "entry.description",
+          "feed.title"
+        ],
+        "terms": {
+          "震惊": -4,
+          "速看": -4,
+          "医生": -3,
+          "糖尿病": -4,
+          "每天吃": -4,
+          "热文榜": -6,
+          "万万没想到": -4
+        }
+      }
+    ]
+  },
   "accounts": {
     "karpathy": 10,
     "sama": 8,
