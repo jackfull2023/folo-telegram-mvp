@@ -8,7 +8,9 @@
   "telegram": {
     "bot_token": "",
     "chat_id": "",
-    "include_debug": true
+    "include_debug": true,
+    "dedupe_title_description": true,
+    "disable_web_page_preview": false
   },
   "filter": {
     "min_score": 8

@@ -417,10 +417,18 @@ Folo Webhook 会发送类似结构：
 第一周建议打开：
 
 ```json
-"include_debug": true
+"telegram": {
+  "include_debug": true,
+  "dedupe_title_description": true,
+  "disable_web_page_preview": false
+}
 ```
 
 这样 Telegram 消息底部会显示 `score` 和命中原因，方便你调权重。稳定后再改成 `false`。
+
+`dedupe_title_description` 会在标题和正文高度重复时只发送一份正文，适合 X/RSSHub 这类标题经常等于正文开头的源。
+
+如果 Telegram 自带链接预览也显得重复，可以把 `disable_web_page_preview` 改成 `true`。
 
 ## 10. 免费版边界
 

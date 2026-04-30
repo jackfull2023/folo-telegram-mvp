@@ -217,6 +217,38 @@ def strip_html(value: str | None) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def compact_for_compare(value: str) -> str:
+    value = value.lower()
+    value = re.sub(r"\s+", "", value)
+    return re.sub(r"[^\w\u4e00-\u9fff]+", "", value)
+
+
+def trim_title_ellipsis(value: str) -> str:
+    return re.sub(r"(\.{3}|…)+$", "", value).strip()
+
+
+def title_description_overlap(title: str, description: str) -> bool:
+    title_key = compact_for_compare(trim_title_ellipsis(title))
+    desc_key = compact_for_compare(description)
+    if not title_key or not desc_key:
+        return False
+    if title_key == desc_key:
+        return True
+    if len(title_key) >= 12 and desc_key.startswith(title_key):
+        return True
+    if len(desc_key) >= 12 and title_key.startswith(desc_key):
+        return True
+    shorter = min(len(title_key), len(desc_key))
+    if shorter < 20:
+        return False
+    shared = 0
+    for a, b in zip(title_key, desc_key):
+        if a != b:
+            break
+        shared += 1
+    return shared / shorter >= 0.8
+
+
 def text_blob(payload: dict[str, Any]) -> str:
     entry = payload.get("entry") or {}
     feed = payload.get("feed") or {}
@@ -461,10 +493,15 @@ def telegram_message(payload: dict[str, Any], score: int, reason: str) -> str:
     feed = payload.get("feed") or {}
 
     feed_title = html.escape(str(feed.get("title") or "Folo"))
-    title = html.escape(strip_html(entry.get("title")) or "New entry")
+    raw_title = strip_html(entry.get("title")) or "New entry"
     url = html.escape(str(entry.get("url") or ""))
     author = html.escape(str(entry.get("author") or ""))
-    desc = strip_html(entry.get("description") or entry.get("content"))
+    raw_desc = strip_html(entry.get("description") or entry.get("content"))
+    dedupe_desc = bool(CONFIG["telegram"].get("dedupe_title_description", True))
+    use_desc_as_body = bool(dedupe_desc and title_description_overlap(raw_title, raw_desc))
+
+    title = html.escape(raw_title)
+    desc = raw_desc
     if len(desc) > 360:
         desc = desc[:357].rstrip() + "..."
     desc = html.escape(desc)
@@ -474,8 +511,11 @@ def telegram_message(payload: dict[str, Any], score: int, reason: str) -> str:
     if author:
         lines.append(f"<i>{author}</i>")
     lines.append("")
-    lines.append(f"<b>{title}</b>")
-    if desc:
+    if use_desc_as_body and desc:
+        lines.append(desc)
+    else:
+        lines.append(f"<b>{title}</b>")
+    if desc and not use_desc_as_body:
         lines.append("")
         lines.append(desc)
     if url:
@@ -499,7 +539,7 @@ def send_telegram(message: str) -> None:
             "chat_id": chat_id,
             "text": message,
             "parse_mode": "HTML",
-            "disable_web_page_preview": "false",
+            "disable_web_page_preview": str(bool(CONFIG["telegram"].get("disable_web_page_preview", False))).lower(),
         }
     ).encode("utf-8")
     req = urllib.request.Request(endpoint, data=data, method="POST")
